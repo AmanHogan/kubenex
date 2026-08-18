@@ -1,8 +1,12 @@
 import { Sidebar } from "@/components/sidebar";
+import { HeaderBar } from "@/components/header-bar";
+import { PageGlow } from "@/components/page-glow";
+import { SidebarProvider } from "@/lib/sidebar-context";
 
 /**
- * Dashboard shell — sidebar + scrollable main area.
- * Every route inside (dashboard) gets this frame.
+ * Dashboard shell — header bar + overlay sidebar + scrollable content.
+ * No fixed sidebar reserving layout space; sidebar slides in from
+ * hamburger toggle, just like the c4-diagram dashboard.
  */
 export default function DashboardLayout({
   children,
@@ -10,11 +14,15 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }>): React.JSX.Element {
   return (
-    <div className="flex min-h-screen">
-      <Sidebar />
-      <main className="ml-56 flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-6xl px-6 py-8">{children}</div>
-      </main>
-    </div>
+    <SidebarProvider>
+      <div className="flex h-screen flex-col overflow-hidden">
+        <PageGlow />
+        <Sidebar />
+        <HeaderBar />
+        <main className="flex-1 overflow-auto p-6">
+          {children}
+        </main>
+      </div>
+    </SidebarProvider>
   );
 }

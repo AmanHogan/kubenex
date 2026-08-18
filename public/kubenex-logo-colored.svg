@@ -1,0 +1,37 @@
+<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="kx-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2563EB"/>
+      <stop offset="100%" stop-color="#0EA5E9"/>
+    </linearGradient>
+    <radialGradient id="kx-core" cx="35%" cy="35%" r="75%">
+      <stop offset="0%" stop-color="#38BDF8"/>
+      <stop offset="100%" stop-color="#1D4ED8"/>
+    </radialGradient>
+  </defs>
+
+  <g stroke="url(#kx-grad)" stroke-width="4" stroke-linecap="round">
+    <line x1="100" y1="100" x2="100" y2="30"/>
+    <line x1="100" y1="100" x2="160.6" y2="65"/>
+    <line x1="100" y1="100" x2="160.6" y2="135"/>
+    <line x1="100" y1="100" x2="100" y2="170"/>
+    <line x1="100" y1="100" x2="39.4" y2="135"/>
+    <line x1="100" y1="100" x2="39.4" y2="65"/>
+  </g>
+
+  <polygon points="100,30 160.6,65 160.6,135 100,170 39.4,135 39.4,65"
+           fill="none" stroke="url(#kx-grad)" stroke-width="4"
+           stroke-linejoin="round" opacity="0.85"/>
+
+  <g fill="#ffffff" stroke="url(#kx-grad)" stroke-width="3">
+    <circle cx="100" cy="30" r="7"/>
+    <circle cx="160.6" cy="65" r="7"/>
+    <circle cx="160.6" cy="135" r="7"/>
+    <circle cx="100" cy="170" r="7"/>
+    <circle cx="39.4" cy="135" r="7"/>
+    <circle cx="39.4" cy="65" r="7"/>
+  </g>
+
+  <circle cx="100" cy="100" r="16" fill="url(#kx-core)"/>
+  <circle cx="100" cy="100" r="16" fill="none" stroke="#ffffff" stroke-width="2" opacity="0.6"/>
+</svg>
