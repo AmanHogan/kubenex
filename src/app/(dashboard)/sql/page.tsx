@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { LuPlay, LuSquareTerminal } from "react-icons/lu";
 
 /**
@@ -16,6 +16,20 @@ export default function SqlEditorPage(): React.JSX.Element {
   const [columns, setColumns] = useState<string[]>([]);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Query History hands a statement over via sessionStorage rather than a URL
+  // param, which would break on long queries. Consume it once on mount.
+  useEffect(() => {
+    try {
+      const pending = sessionStorage.getItem("kubenex:pending-query");
+      if (pending) {
+        setQuery(pending);
+        sessionStorage.removeItem("kubenex:pending-query");
+      }
+    } catch {
+      // sessionStorage can be unavailable in private mode; ignore.
+    }
+  }, []);
 
   async function handleRun(): Promise<void> {
     setRunning(true);

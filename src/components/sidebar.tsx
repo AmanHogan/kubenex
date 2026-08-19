@@ -11,7 +11,10 @@ import {
   LuServer,
   LuHouse,
   LuHistory,
+  LuClock,
   LuUpload,
+  LuFolderTree,
+  LuTable,
   LuPanelLeftClose,
 } from "react-icons/lu";
 import { cn } from "@/lib/utils";
@@ -34,6 +37,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/", label: "Home", icon: LuHouse },
       { href: "/notebooks", label: "Workspace", icon: LuNotebook },
       { href: "/catalog", label: "Catalog", icon: LuDatabase },
+      { href: "/catalog/new", label: "Create Table", icon: LuTable },
       { href: "/jobs", label: "Jobs & Pipelines", icon: LuCalendarClock },
       { href: "/compute", label: "Compute", icon: LuServer },
     ],
@@ -42,16 +46,20 @@ const NAV_GROUPS: NavGroup[] = [
     label: "SQL",
     items: [
       { href: "/sql", label: "SQL Editor", icon: LuSquareTerminal },
+      { href: "/history", label: "Query History", icon: LuClock },
     ],
   },
   {
     label: "Data Engineering",
     items: [
       { href: "/runs", label: "Runs", icon: LuHistory },
+      { href: "/storage", label: "Storage", icon: LuFolderTree },
       { href: "/ingest", label: "Data Ingestion", icon: LuUpload },
     ],
   },
 ];
+
+const ALL_HREFS: string[] = NAV_GROUPS.flatMap((g) => g.items.map((i) => i.href));
 
 /**
  * Overlay nav drawer — hamburger-toggled, slides in from left.
@@ -112,8 +120,19 @@ export function Sidebar(): React.JSX.Element {
               )}
               <div className="space-y-0.5">
                 {group.items.map(({ href, label, icon: Icon }) => {
+                  // Longest match wins, so /catalog/new highlights only
+                  // "Create Table" rather than "Catalog" as well.
                   const active =
-                    href === "/" ? pathname === "/" : pathname.startsWith(href);
+                    href === "/"
+                      ? pathname === "/"
+                      : pathname === href ||
+                        (pathname.startsWith(`${href}/`) &&
+                          !ALL_HREFS.some(
+                            (other) =>
+                              other.length > href.length &&
+                              (pathname === other ||
+                                pathname.startsWith(`${other}/`))
+                          ));
                   return (
                     <Link
                       key={`${gi}-${href}-${label}`}

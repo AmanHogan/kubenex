@@ -1,67 +1,147 @@
 /**
- * MinIO / S3 client — browse buckets and upload files.
- * Uses the S3-compatible XML API directly (no AWS SDK needed for basic ops).
+ * MinIO / S3 storage client.
+ *
+ * MinIO speaks the S3 API, so this uses the AWS SDK rather than hand-rolling
+ * SigV4 signing. Everything here is server-only — the credentials must never
+ * reach the browser, so this module is imported exclusively by route handlers.
  */
+
+import {
+  S3Client,
+  ListBucketsCommand,
+  ListObjectsV2Command,
+  GetObjectCommand,
+  HeadObjectCommand,
+} from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 const MINIO_ENDPOINT =
   process.env.MINIO_ENDPOINT ??
   "http://minio.data-platform.svc.cluster.local:9000";
-const MINIO_ACCESS_KEY = process.env.MINIO_ACCESS_KEY ?? "";
-const MINIO_SECRET_KEY = process.env.MINIO_SECRET_KEY ?? "";
 
 export interface BucketInfo {
   name: string;
-  creationDate: string;
+  creationDate: string | null;
+}
+
+/** A prefix ("folder") inside a bucket. */
+export interface FolderInfo {
+  prefix: string;
+  name: string;
 }
 
 export interface ObjectInfo {
   key: string;
+  name: string;
   size: number;
-  lastModified: string;
-  etag: string;
+  lastModified: string | null;
+  etag: string | null;
 }
 
-/**
- * Sign a request using AWS Signature v4 (simplified for MinIO).
- * For production use aws4 or @aws-sdk, but this keeps deps minimal.
- */
-async function minioFetch(
-  path: string,
-  opts: RequestInit = {}
-): Promise<Response> {
-  // Use the MinIO admin endpoint with basic auth for simple ops,
-  // or proxy through the MinIO console API.
-  // For now, use the S3 ListBuckets / ListObjects XML API unsigned
-  // (MinIO allows this if the bucket policy is set to public-read).
-  return fetch(`${MINIO_ENDPOINT}${path}`, {
-    ...opts,
-    cache: "no-store",
+function client(): S3Client {
+  return new S3Client({
+    endpoint: MINIO_ENDPOINT,
+    region: process.env.MINIO_REGION ?? "us-east-1",
+    // MinIO serves buckets as a path segment, not a DNS subdomain.
+    forcePathStyle: true,
+    credentials: {
+      accessKeyId: process.env.MINIO_ACCESS_KEY ?? "",
+      secretAccessKey: process.env.MINIO_SECRET_KEY ?? "",
+    },
   });
 }
 
 /** List all buckets. */
 export async function listBuckets(): Promise<BucketInfo[]> {
-  // Use the MinIO Console API which is simpler
-  const res = await minioFetch("/minio/health/live");
-  // For actual bucket listing, we'll use kubectl or the console API
-  // This is a placeholder — real impl uses @aws-sdk/client-s3
-  return [
-    { name: "raw-data", creationDate: "2026-08-10" },
-    { name: "processed-data", creationDate: "2026-08-10" },
-    { name: "notebooks", creationDate: "2026-08-10" },
-    { name: "models", creationDate: "2026-08-10" },
-  ];
+  const res = await client().send(new ListBucketsCommand({}));
+  return (res.Buckets ?? []).map((b) => ({
+    name: b.Name ?? "",
+    creationDate: b.CreationDate?.toISOString() ?? null,
+  }));
 }
 
-/** Get the S3 endpoint URL and credentials for client-side config. */
-export function getMinioConfig(): {
-  endpoint: string;
-  accessKey: string;
-  secretKey: string;
-} {
-  return {
-    endpoint: MINIO_ENDPOINT,
-    accessKey: MINIO_ACCESS_KEY,
-    secretKey: MINIO_SECRET_KEY,
-  };
+/**
+ * List one level of a bucket.
+ *
+ * S3 has no real directories, so `Delimiter` is what turns a flat keyspace
+ * into something browsable: keys sharing a prefix up to the next "/" come
+ * back as CommonPrefixes instead of individual objects.
+ */
+export async function listObjects(
+  bucket: string,
+  prefix = "",
+  maxKeys = 500
+): Promise<{ folders: FolderInfo[]; objects: ObjectInfo[]; truncated: boolean }> {
+  const res = await client().send(
+    new ListObjectsV2Command({
+      Bucket: bucket,
+      Prefix: prefix,
+      Delimiter: "/",
+      MaxKeys: maxKeys,
+    })
+  );
+
+  const folders: FolderInfo[] = (res.CommonPrefixes ?? []).map((p) => {
+    const full = p.Prefix ?? "";
+    return {
+      prefix: full,
+      name: full.slice(prefix.length).replace(/\/$/, ""),
+    };
+  });
+
+  const objects: ObjectInfo[] = (res.Contents ?? [])
+    // The prefix itself comes back as a zero-byte key when a "folder"
+    // placeholder object exists; it is not a file the user wants to see.
+    .filter((o) => o.Key && o.Key !== prefix)
+    .map((o) => ({
+      key: o.Key ?? "",
+      name: (o.Key ?? "").slice(prefix.length),
+      size: o.Size ?? 0,
+      lastModified: o.LastModified?.toISOString() ?? null,
+      etag: o.ETag?.replace(/"/g, "") ?? null,
+    }));
+
+  return { folders, objects, truncated: res.IsTruncated ?? false };
+}
+
+/**
+ * Presigned GET URL for a single object.
+ *
+ * Presigning lets the browser download directly from MinIO without the
+ * credentials ever leaving the server or the bytes being proxied through it.
+ */
+export async function presignDownload(
+  bucket: string,
+  key: string,
+  expiresIn = 300
+): Promise<string> {
+  return getSignedUrl(
+    client(),
+    new GetObjectCommand({ Bucket: bucket, Key: key }),
+    { expiresIn }
+  );
+}
+
+/** Fetch a text preview of an object, capped so a huge file can't be pulled in. */
+export async function previewObject(
+  bucket: string,
+  key: string,
+  maxBytes = 64 * 1024
+): Promise<{ text: string; size: number; truncated: boolean }> {
+  const s3 = client();
+  const head = await s3.send(
+    new HeadObjectCommand({ Bucket: bucket, Key: key })
+  );
+  const size = head.ContentLength ?? 0;
+
+  const res = await s3.send(
+    new GetObjectCommand({
+      Bucket: bucket,
+      Key: key,
+      Range: `bytes=0-${maxBytes - 1}`,
+    })
+  );
+
+  const text = (await res.Body?.transformToString()) ?? "";
+  return { text, size, truncated: size > maxBytes };
 }

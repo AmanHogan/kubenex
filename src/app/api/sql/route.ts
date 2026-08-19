@@ -5,6 +5,12 @@ const THRIFT_HOST =
   "spark-thrift.data-platform.svc.cluster.local";
 const THRIFT_PORT = process.env.THRIFT_PORT ?? "10000";
 
+// HTTP bridge in front of the Thrift Server — see deploy/sql-gateway.
+const GATEWAY_URL =
+  process.env.SQL_GATEWAY_URL ??
+  process.env.THRIFT_PROXY_URL ??
+  "http://sql-gateway.data-platform.svc.cluster.local:8080";
+
 /**
  * POST /api/sql — execute a Spark SQL query via the Thrift Server.
  *
@@ -16,7 +22,10 @@ const THRIFT_PORT = process.env.THRIFT_PORT ?? "10000";
  */
 export async function POST(req: Request): Promise<NextResponse> {
   try {
-    const { query } = (await req.json()) as { query?: string };
+    const { query, source } = (await req.json()) as {
+      query?: string;
+      source?: string;
+    };
     if (!query?.trim()) {
       return NextResponse.json({ error: "Query is required" }, { status: 400 });
     }
@@ -24,23 +33,40 @@ export async function POST(req: Request): Promise<NextResponse> {
     const jdbcUrl = `jdbc:hive2://${THRIFT_HOST}:${THRIFT_PORT}`;
 
     const resp = await fetch(
-      `${process.env.THRIFT_PROXY_URL ?? "http://localhost:3001"}/query`,
+      `${GATEWAY_URL}/query`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jdbc_url: jdbcUrl, query }),
+        body: JSON.stringify({ jdbc_url: jdbcUrl, query, source: source ?? "sql-editor" }),
       }
     );
 
+    // The gateway returns 400 with a JSON body for statement errors; pass that
+    // message straight through rather than wrapping the raw payload in text.
     if (!resp.ok) {
       const text = await resp.text();
+      try {
+        const parsed = JSON.parse(text) as { error?: string; durationMs?: number };
+        if (parsed?.error) {
+          return NextResponse.json(parsed, { status: resp.status });
+        }
+      } catch {
+        // Not JSON — fall through to the raw-text form below.
+      }
       return NextResponse.json(
-        { error: `Thrift proxy error: ${text}` },
+        { error: `SQL gateway error: ${text}` },
         { status: 502 }
       );
     }
 
     const data = await resp.json();
+
+    // The gateway reports statement errors in the body; treat them as failures
+    // rather than letting an empty result render as a successful query.
+    if (data?.error) {
+      return NextResponse.json(data, { status: 400 });
+    }
+
     return NextResponse.json(data);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";

@@ -40,12 +40,23 @@ interface WorkspaceItem {
 
 type CellLanguage = "sql" | "python" | "markdown";
 
+/** Structured result set from a SQL cell, rendered as a grid. */
+interface CellResult {
+  columns: string[];
+  rows: Record<string, string | null>[];
+  rowCount: number;
+  truncated: boolean;
+  durationMs: number | null;
+}
+
 interface Cell {
   id: string;
   type: "code" | "markdown";
   language: CellLanguage;
   source: string;
   output: string | null;
+  /** Set for SQL cells that returned a result set; null otherwise. */
+  result?: CellResult | null;
   status: "idle" | "running" | "success" | "error";
 }
 
@@ -59,7 +70,7 @@ const LANGUAGES: { value: CellLanguage; label: string }[] = [
 
 let cellCounter = 0;
 function newCell(language: CellLanguage = "sql"): Cell {
-  return { id: `cell-${++cellCounter}`, type: language === "markdown" ? "markdown" : "code", language, source: "", output: null, status: "idle" };
+  return { id: `cell-${++cellCounter}`, type: language === "markdown" ? "markdown" : "code", language, source: "", output: null, result: null, status: "idle" };
 }
 
 const ICON_MAP: Record<string, typeof LuNotebook> = {
@@ -194,11 +205,11 @@ export default function WorkspacePage(): React.JSX.Element {
 
     // Markdown cells don't need execution — just mark as rendered
     if (cell.language === "markdown") {
-      updateCell(cell.id, { status: "success", output: null });
+      updateCell(cell.id, { status: "success", output: null, result: null });
       return;
     }
 
-    updateCell(cell.id, { status: "running", output: null });
+    updateCell(cell.id, { status: "running", output: null, result: null });
     try {
       const res = await fetch("/api/execute", {
         method: "POST",
@@ -210,9 +221,19 @@ export default function WorkspacePage(): React.JSX.Element {
       updateCell(cell.id, {
         status: data.status === "error" ? "error" : "success",
         output: data.output ?? "No output",
+        result:
+          data.columns && data.columns.length > 0
+            ? {
+                columns: data.columns,
+                rows: data.rows ?? [],
+                rowCount: data.rowCount ?? 0,
+                truncated: data.truncated ?? false,
+                durationMs: data.durationMs ?? null,
+              }
+            : null,
       });
     } catch (err) {
-      updateCell(cell.id, { status: "error", output: err instanceof Error ? err.message : "Execution failed" });
+      updateCell(cell.id, { status: "error", output: err instanceof Error ? err.message : "Execution failed", result: null });
     }
   }
 
@@ -366,12 +387,47 @@ export default function WorkspacePage(): React.JSX.Element {
                   />
                 )}
 
-                {/* Output (for code cells) */}
-                {cell.output && !isMarkdown && (
+                {/* Output (for code cells) — a result set renders as a grid,
+                    anything else (Python stdout, errors, DDL acks) as text. */}
+                {!isMarkdown && cell.status !== "error" && cell.result && cell.result.columns.length > 0 && cell.result.rows.length > 0 ? (
+                  <div className="border-t border-border/40 bg-muted/10">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-sm">
+                        <thead>
+                          <tr className="border-b border-border/40">
+                            {cell.result.columns.map((col) => (
+                              <th key={col} className="whitespace-nowrap px-4 py-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                                {col}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {cell.result.rows.map((row, i) => (
+                            <tr key={i} className="border-b border-border/20 last:border-0">
+                              {cell.result!.columns.map((col) => (
+                                <td key={col} className="whitespace-nowrap px-4 py-1.5 font-mono text-xs">
+                                  {row[col] ?? <span className="text-muted-foreground/50">null</span>}
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="flex items-center gap-3 border-t border-border/40 px-4 py-1.5 text-[11px] text-muted-foreground">
+                      <span>{cell.result.rowCount} row{cell.result.rowCount !== 1 ? "s" : ""}</span>
+                      {cell.result.durationMs !== null && (
+                        <span className="tabular-nums">{cell.result.durationMs} ms</span>
+                      )}
+                      {cell.result.truncated && <span>truncated</span>}
+                    </div>
+                  </div>
+                ) : cell.output && !isMarkdown ? (
                   <div className={cn("border-t border-border/40 px-4 py-3 font-mono text-xs leading-relaxed", cell.status === "error" ? "bg-destructive/5 text-destructive" : "bg-muted/10 text-muted-foreground")}>
                     <pre className="overflow-x-auto whitespace-pre">{cell.output}</pre>
                   </div>
-                )}
+                ) : null}
               </div>
             );
           })}
