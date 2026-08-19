@@ -1,0 +1,110 @@
+# Kubenex SQL Gateway — HTTP bridge in front of the Spark Thrift Server.
+#
+# The app code lives in the sql-gateway-code ConfigMap, generated from app.py
+# by deploy.sh, so app.py stays the single source of truth. Dependencies are
+# pip-installed at container start, which avoids maintaining a custom image
+# and a registry push for what is a ~140-line service.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sql-gateway
+  namespace: data-platform
+  labels:
+    app: sql-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sql-gateway
+  template:
+    metadata:
+      labels:
+        app: sql-gateway
+    spec:
+      containers:
+        - name: sql-gateway
+          # Full python image, not -slim: the thrift package ships as an sdist
+          # and needs a compiler, which slim does not have.
+          image: python:3.11
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              set -e
+              pip install --no-cache-dir --quiet \
+                "fastapi==0.115.6" "uvicorn==0.34.0" "pydantic==2.10.4" \
+                "PyHive==0.7.0" "thrift==0.20.0" "thrift-sasl==0.4.3" \
+                "pure-sasl==0.6.2" "psycopg2-binary==2.9.10"
+              exec uvicorn app:app --host 0.0.0.0 --port 8080
+          workingDir: /app
+          env:
+            - name: THRIFT_HOST
+              value: spark-thrift.data-platform.svc.cluster.local
+            - name: THRIFT_PORT
+              value: "10000"
+            - name: MAX_ROWS
+              value: "1000"
+            # Query history is written to the existing platform Postgres.
+            # Credentials come from the same secret the postgres deployment
+            # uses — never inlined here.
+            - name: PG_HOST
+              value: postgres.data-platform.svc.cluster.local
+            - name: PG_DB
+              value: dataplatform
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-creds
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-creds
+                  key: POSTGRES_PASSWORD
+          ports:
+            - containerPort: 8080
+              name: http
+          volumeMounts:
+            - name: code
+              mountPath: /app
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          # Generous startup budget: the pip install on first boot takes a
+          # while. Liveness only takes over once startup has succeeded.
+          startupProbe:
+            httpGet:
+              path: /docs
+              port: 8080
+            periodSeconds: 5
+            failureThreshold: 60
+          livenessProbe:
+            httpGet:
+              path: /docs
+              port: 8080
+            periodSeconds: 30
+            timeoutSeconds: 5
+      volumes:
+        - name: code
+          configMap:
+            name: sql-gateway-code
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sql-gateway
+  namespace: data-platform
+  labels:
+    app: sql-gateway
+spec:
+  type: NodePort
+  selector:
+    app: sql-gateway
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      nodePort: 30500

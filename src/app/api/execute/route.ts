@@ -13,8 +13,6 @@ import { NextResponse } from "next/server";
 const JUPYTER_URL =
   process.env.JUPYTER_URL ?? "http://jupyterhub.data-platform.svc.cluster.local:8000";
 const JUPYTER_TOKEN = process.env.JUPYTER_TOKEN ?? "";
-const THRIFT_PROXY_URL =
-  process.env.THRIFT_PROXY_URL ?? "http://spark-thrift.data-platform.svc.cluster.local:10000";
 
 export async function POST(req: Request): Promise<NextResponse> {
   try {
@@ -32,38 +30,50 @@ export async function POST(req: Request): Promise<NextResponse> {
       const sqlRes = await fetch(new URL("/api/sql", req.url).toString(), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: code }),
+        body: JSON.stringify({ query: code, source: "notebook" }),
       });
       const sqlData = await sqlRes.json();
 
-      if (!sqlRes.ok) {
+      if (!sqlRes.ok || sqlData?.error) {
         return NextResponse.json({
           output: sqlData.error ?? "SQL execution failed",
           status: "error",
+          durationMs: sqlData.durationMs ?? null,
         });
       }
 
-      // Format SQL results as table
-      const rows = sqlData.rows as Record<string, unknown>[] | undefined;
+      // Return the result set structurally so the notebook can render a real
+      // table. `output` is kept as a text fallback for anything that only
+      // knows how to show a string (and for the Python branch below).
+      const rows = sqlData.rows as Record<string, string | null>[] | undefined;
       const cols = sqlData.columns as string[] | undefined;
 
       if (rows && cols && rows.length > 0) {
-        const header = cols.join(" | ");
-        const sep = cols.map(() => "---").join(" | ");
-        const body = rows
+        const preview = rows
           .slice(0, 100)
           .map((r) => cols.map((c) => String(r[c] ?? "")).join(" | "))
           .join("\n");
-        const truncated = rows.length > 100 ? `\n... (${rows.length - 100} more rows)` : "";
+
         return NextResponse.json({
-          output: `${header}\n${sep}\n${body}${truncated}`,
           status: "success",
+          output: `${cols.join(" | ")}\n${cols.map(() => "---").join(" | ")}\n${preview}`,
+          columns: cols,
+          rows,
+          rowCount: sqlData.rowCount ?? rows.length,
+          truncated: sqlData.truncated ?? false,
+          durationMs: sqlData.durationMs ?? null,
         });
       }
 
+      // DDL/DML and empty result sets: no grid, just an acknowledgement.
       return NextResponse.json({
-        output: sqlData.message ?? "OK — no rows returned.",
         status: "success",
+        output: sqlData.message ?? "OK — statement executed, no rows returned.",
+        columns: cols ?? [],
+        rows: [],
+        rowCount: 0,
+        truncated: false,
+        durationMs: sqlData.durationMs ?? null,
       });
     }
 
