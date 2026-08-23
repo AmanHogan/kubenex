@@ -28,13 +28,13 @@ All services answer on the Tailscale address of the control-plane node,
 ```mermaid
 flowchart TB
   subgraph LAN["Home LAN — 192.168.4.0/24, gateway 192.168.4.1"]
-    subgraph HOSTS["Proxmox hosts, 16 GB RAM each"]
-      P1["pve1<br/>192.168.4.210<br/>HP ProDesk i5-7500T"]
-      P2["pve2<br/>192.168.4.211<br/>HP ProDesk i5-7500T"]
-      P3["pve3<br/>192.168.4.212<br/>HP EliteDesk 800 G4"]
+    subgraph HOSTS["Proxmox hosts"]
+      P1["pve1<br/>192.168.4.210"]
+      P2["pve2<br/>192.168.4.211"]
+      P3["pve3<br/>192.168.4.212"]
     end
 
-    subgraph VMS["k3s VMs — Ubuntu, static IPs via netplan"]
+    subgraph VMS["k3s VMs — static IPs via netplan"]
       SRV["k3s-server, control-plane<br/>192.168.4.220<br/>11.7 GiB"]
       AG1["k3s-agent<br/>192.168.4.221<br/>7.8 GiB"]
       AG2["k3s-agent-2<br/>192.168.4.222<br/>7.8 GiB"]
@@ -126,8 +126,8 @@ flowchart LR
   TH -->|"s3a://"| S3
 ```
 
-Spark reads MinIO over `s3a://` directly — `hadoop-aws` 3.3.4 and the AWS SDK
-bundle are on the Thrift server. `bronze.sales` is a Parquet table at
+Spark reads MinIO over `s3a://` directly — the `hadoop-aws` connector and AWS
+SDK bundle are installed on the Thrift server. `bronze.sales` is a Parquet table at
 `s3a://raw-data/test/sales.parquet`. There are no Delta jars installed, so table
 formats are limited to Parquet, CSV, JSON, and ORC.
 
@@ -158,7 +158,7 @@ flowchart TB
   TSNODE --> NP
   NP --> SVC
 
-  PUBLIC -->|"proxmox.amanhogan.com<br/>diagram.amanhogan.com"| TUNNEL
+  PUBLIC -->|"published hostnames"| TUNNEL
   TUNNEL -->|"outbound only"| CFD
   CFD --> TR
   TR --> SVC
@@ -189,6 +189,17 @@ file.
 
 Postgres holds four databases: `airflow`, `dataplatform` (Kubenex query
 history), `hive_metastore`, and `mlflow`.
+
+## Security posture
+
+The SQL gateway has **no authentication**. Anything that can reach its NodePort
+can execute arbitrary Spark SQL, including DDL. That is acceptable only because
+the port is reachable solely from the LAN and the private Tailscale network —
+it must not be exposed through the Cloudflare tunnel or any public ingress.
+
+Credentials are never stored in this repository. Postgres and MinIO secrets are
+supplied to workloads through Kubernetes secrets via `secretKeyRef`, and local
+development values live in `.env.local`, which is gitignored.
 
 ## Failure modes worth remembering
 
