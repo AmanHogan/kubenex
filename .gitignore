@@ -39,3 +39,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# python bytecode from deploy/ helper scripts
+__pycache__/
+*.pyc
