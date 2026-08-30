@@ -12,6 +12,7 @@ import {
   ListObjectsV2Command,
   GetObjectCommand,
   HeadObjectCommand,
+  PutObjectCommand,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
@@ -144,4 +145,31 @@ export async function previewObject(
 
   const text = (await res.Body?.transformToString()) ?? "";
   return { text, size, truncated: size > maxBytes };
+}
+
+/** Largest upload accepted in a single request. */
+export const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
+
+/**
+ * Upload one object.
+ *
+ * The body is buffered rather than streamed: uploads here are small analytic
+ * files, and buffering keeps the content-length known so MinIO does not need
+ * chunked-transfer support enabled.
+ */
+export async function uploadObject(
+  bucket: string,
+  key: string,
+  body: Uint8Array,
+  contentType?: string
+): Promise<{ key: string; size: number }> {
+  await client().send(
+    new PutObjectCommand({
+      Bucket: bucket,
+      Key: key,
+      Body: body,
+      ContentType: contentType || "application/octet-stream",
+    })
+  );
+  return { key, size: body.byteLength };
 }

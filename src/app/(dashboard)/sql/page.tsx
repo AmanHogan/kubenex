@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { LuPlay, LuSquareTerminal } from "react-icons/lu";
+import { LuPlay, LuSquareTerminal, LuTable, LuChartBar } from "react-icons/lu";
+import ResultChart from "@/components/result-chart";
+import { cn } from "@/lib/utils";
 
 /**
  * SQL Editor — write and run SQL against Spark Thrift Server.
@@ -16,6 +18,7 @@ export default function SqlEditorPage(): React.JSX.Element {
   const [columns, setColumns] = useState<string[]>([]);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [view, setView] = useState<"table" | "chart">("table");
 
   // Query History hands a statement over via sessionStorage rather than a URL
   // param, which would break on long queries. Consume it once on mount.
@@ -102,7 +105,33 @@ export default function SqlEditorPage(): React.JSX.Element {
         </div>
       )}
 
-      {results && (
+      {results && results.length > 0 && (
+        <div className="mb-3 flex gap-1">
+          {([["table", "Table", LuTable], ["chart", "Chart", LuChartBar]] as const).map(
+            ([id, label, Icon]) => (
+              <button
+                key={id}
+                onClick={() => setView(id)}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors",
+                  view === id
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <Icon className="h-3.5 w-3.5" />
+                {label}
+              </button>
+            )
+          )}
+        </div>
+      )}
+
+      {results && view === "chart" && results.length > 0 && (
+        <ResultChart columns={columns} rows={results} />
+      )}
+
+      {results && (view === "table" || results.length === 0) && (
         <div className="overflow-x-auto rounded-xl border-2 border-border/60 bg-card">
           <table className="w-full text-left text-sm">
             <thead>

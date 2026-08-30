@@ -52,6 +52,20 @@
 }
 
 :root {
+  /* Chart series palette — fixed order, never cycled. Validated for the card
+     surface with the dataviz validator: adjacent CVD ΔE 9.1, normal-vision
+     19.6. Three slots sit under 3:1 on white, so charts using them must ship
+     visible labels or a table view (both are present in the results panel). */
+  --viz-1: #2a78d6;
+  --viz-2: #eb6834;
+  --viz-3: #1baf7a;
+  --viz-4: #eda100;
+  --viz-5: #e87ba4;
+  --viz-6: #008300;
+  --viz-7: #4a3aa7;
+  --viz-8: #e34948;
+  --viz-grid: rgba(0, 0, 0, 0.08);
+
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -86,6 +100,18 @@
      Primary/ring stay a blue brand accent rather than shadcn's monochrome
      default — swap this one color if a given app wants its own accent;
      everything else should stay identical across apps. */
+  /* Same eight hues re-stepped for the dark surface — a selected palette,
+     not an automatic flip. All eight clear 3:1 on #171717. */
+  --viz-1: #3987e5;
+  --viz-2: #d95926;
+  --viz-3: #199e70;
+  --viz-4: #c98500;
+  --viz-5: #d55181;
+  --viz-6: #008300;
+  --viz-7: #9085e9;
+  --viz-8: #e66767;
+  --viz-grid: rgba(255, 255, 255, 0.10);
+
   --background: #0a0a0a;
   --foreground: #fafafa;
   --card: #171717;

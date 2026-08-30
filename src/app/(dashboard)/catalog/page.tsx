@@ -88,8 +88,10 @@ interface TableDetail {
   numFiles: string;
   permissions: Permission[];
   policies: Policy[];
-  lineage: { upstream: LineageNode[]; downstream: LineageNode[] };
+  lineage: { upstream: LineageNode[]; downstream: LineageNode[]; derived?: boolean };
   tags: string[];
+  /** Absent on platforms that do track grants/policies. */
+  governance?: { available: boolean; reason: string };
 }
 
 interface TableSummary {
@@ -126,7 +128,10 @@ const TABS: { id: TabId; label: string; icon: typeof LuColumns3 }[] = [
 /* ─── Helpers ─── */
 
 function relTime(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
+  if (!iso) return "—";
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return "—";
+  const diff = Date.now() - t;
   const mins = Math.floor(diff / 60000);
   if (mins < 60) return `${mins}m ago`;
   const hrs = Math.floor(mins / 60);
@@ -136,6 +141,7 @@ function relTime(iso: string): string {
 }
 
 function fmtDate(iso: string): string {
+  if (!iso || Number.isNaN(new Date(iso).getTime())) return "—";
   return new Date(iso).toLocaleDateString("en-US", {
     year: "numeric",
     month: "short",
@@ -283,7 +289,7 @@ export default function CatalogPage(): React.JSX.Element {
                       </span>
                     ))}
                     <span className="inline-flex items-center rounded-md bg-muted/30 px-2 py-0.5 text-[11px] font-medium text-muted-foreground ring-1 ring-foreground/5">
-                      {td.type === "EXTERNAL_TABLE" ? "External" : "Managed"}
+                      {td.type?.toUpperCase().startsWith("EXTERNAL") ? "External" : "Managed"}
                     </span>
                     <span className="inline-flex items-center rounded-md bg-muted/30 px-2 py-0.5 text-[11px] font-mono text-muted-foreground ring-1 ring-foreground/5">
                       {td.format}
@@ -349,8 +355,8 @@ export default function CatalogPage(): React.JSX.Element {
               {activeTab === "overview" && <OverviewTab detail={td} />}
               {activeTab === "sample" && <SampleTab data={sampleData} loading={sampleLoading} />}
               {activeTab === "details" && <DetailsTab detail={td} />}
-              {activeTab === "permissions" && <PermissionsTab permissions={td.permissions} />}
-              {activeTab === "policies" && <PoliciesTab policies={td.policies} />}
+              {activeTab === "permissions" && <PermissionsTab permissions={td.permissions} governance={td.governance} />}
+              {activeTab === "policies" && <PoliciesTab policies={td.policies} governance={td.governance} />}
               {activeTab === "lineage" && <LineageTab lineage={td.lineage} tableName={`${td.database}.${td.name}`} />}
             </div>
           </>
@@ -473,7 +479,7 @@ export default function CatalogPage(): React.JSX.Element {
                               </div>
                               <p className="mt-0.5 truncate pl-5 text-[11px] text-muted-foreground">{table.description}</p>
                             </div>
-                            <span className="text-xs text-muted-foreground">{table.type === "EXTERNAL_TABLE" ? "External" : "Managed"}</span>
+                            <span className="text-xs text-muted-foreground">{table.type?.toUpperCase().startsWith("EXTERNAL") ? "External" : "Managed"}</span>
                             <span className="font-mono text-xs text-muted-foreground">{table.format}</span>
                             <span className="text-xs text-muted-foreground tabular-nums">{table.columnCount}</span>
                             <span className="text-xs text-muted-foreground tabular-nums">{table.rowCount}</span>
@@ -644,7 +650,7 @@ function DetailsTab({ detail: td }: { detail: TableDetail }): React.JSX.Element 
         </div>
         <div className="divide-y divide-border/10">
           {([
-            ["Table Type", td.type === "EXTERNAL_TABLE" ? "EXTERNAL TABLE" : "MANAGED TABLE"],
+            ["Table Type", td.type?.toUpperCase().startsWith("EXTERNAL") ? "EXTERNAL TABLE" : "MANAGED TABLE"],
             ["Format", td.format.toUpperCase()],
             ["Location", td.location],
             ["SerDe Library", td.serde],
@@ -686,7 +692,32 @@ function DetailsTab({ detail: td }: { detail: TableDetail }): React.JSX.Element 
 
 /* ─── Permissions Tab ─── */
 
-function PermissionsTab({ permissions }: { permissions: Permission[] }): React.JSX.Element {
+/** Shown where the platform genuinely cannot supply the data. */
+function Unavailable({
+  title,
+  reason,
+  icon: Icon = LuLock,
+}: {
+  title: string;
+  reason: string;
+  icon?: typeof LuLock;
+}): React.JSX.Element {
+  return (
+    <div className="rounded-xl border-2 border-border/60 bg-card px-6 py-10 text-center">
+      <Icon className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
+      <p className="text-sm font-medium">{title}</p>
+      <p className="mx-auto mt-1.5 max-w-md text-xs leading-relaxed text-muted-foreground">
+        {reason}
+      </p>
+    </div>
+  );
+}
+
+function PermissionsTab({ permissions, governance }: { permissions: Permission[]; governance?: { available: boolean; reason: string } }): React.JSX.Element {
+  if (governance && !governance.available) {
+    return <Unavailable title="Permissions are not tracked" reason={governance.reason} />;
+  }
+
   const PRIV_ICONS: Record<string, typeof LuEye> = {
     SELECT: LuEye,
     INSERT: LuPencil,
@@ -757,7 +788,11 @@ function PermissionsTab({ permissions }: { permissions: Permission[] }): React.J
 
 /* ─── Policies Tab ─── */
 
-function PoliciesTab({ policies }: { policies: Policy[] }): React.JSX.Element {
+function PoliciesTab({ policies, governance }: { policies: Policy[]; governance?: { available: boolean; reason: string } }): React.JSX.Element {
+  if (governance && !governance.available) {
+    return <Unavailable title="Policies are not tracked" reason={governance.reason} />;
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -812,7 +847,17 @@ function PoliciesTab({ policies }: { policies: Policy[] }): React.JSX.Element {
 
 /* ─── Lineage Tab ─── */
 
-function LineageTab({ lineage, tableName }: { lineage: { upstream: LineageNode[]; downstream: LineageNode[] }; tableName: string }): React.JSX.Element {
+function LineageTab({ lineage, tableName }: { lineage: { upstream: LineageNode[]; downstream: LineageNode[]; derived?: boolean }; tableName: string }): React.JSX.Element {
+  if (lineage.derived && lineage.upstream.length === 0 && lineage.downstream.length === 0) {
+    return (
+      <Unavailable
+        icon={LuGitBranch}
+        title="No lineage recorded yet"
+        reason="Lineage is derived from query history. Nothing has run through the platform that reads from or writes into this table — run a CREATE TABLE ... AS SELECT or an INSERT and it will appear here."
+      />
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* Visual lineage diagram */}

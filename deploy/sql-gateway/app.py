@@ -7,7 +7,15 @@ JSON API over it:
 
     POST /query    {"query": "SELECT 1"} -> {"columns": [...], "rows": [...]}
     GET  /history  -> recent executions, newest first
+    GET  /jobs     -> scheduled jobs
+    POST /jobs     -> create a scheduled job
+    DELETE /jobs/{id}
     GET  /health   -> {"ok": true}
+
+Scheduled jobs are stored here rather than written into Airflow's DAG folder,
+which is a read-only ConfigMap. A factory DAG in Airflow reads this table and
+generates one DAG per row, so scheduling a notebook never requires the web app
+to hold Kubernetes API credentials.
 
 Every statement that passes through /query is recorded to Postgres, so query
 history is captured centrally no matter which part of the UI ran it (SQL
@@ -17,6 +25,7 @@ history store is unreachable the query still returns normally.
 Deployed into the data-platform namespace; see deployment.yaml.
 """
 
+import json
 import os
 import re
 import time
@@ -104,6 +113,25 @@ def _pg() -> Any:
     )
 
 
+def _init_jobs() -> None:
+    """Create the scheduled-jobs table if it does not exist. Safe to re-run."""
+    with _pg() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS scheduled_jobs (
+                id              BIGSERIAL PRIMARY KEY,
+                name            TEXT        NOT NULL UNIQUE,
+                dag_id          TEXT        NOT NULL UNIQUE,
+                source_notebook TEXT,
+                schedule        TEXT        NOT NULL,
+                statements      JSONB       NOT NULL,
+                enabled         BOOLEAN     NOT NULL DEFAULT TRUE,
+                created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+            """
+        )
+
+
 def _init_history() -> None:
     """Create the history table if it does not exist. Safe to re-run."""
     with _pg() as conn, conn.cursor() as cur:
@@ -158,7 +186,8 @@ def _record(
 def startup() -> None:
     try:
         _init_history()
-        log.info("query_history ready on %s/%s", PG_HOST, PG_DB)
+        _init_jobs()
+        log.info("history + jobs tables ready on %s/%s", PG_HOST, PG_DB)
     except Exception as exc:  # noqa: BLE001
         # The gateway is still useful without history, so start anyway.
         log.warning("history init failed, continuing without it: %s", exc)
@@ -201,6 +230,111 @@ def history(limit: int = 100, source: str | None = None) -> dict[str, Any]:
         }
     except Exception as exc:  # noqa: BLE001
         return {"error": str(exc), "entries": []}
+
+
+# ── Scheduled jobs ──────────────────────────────────────────────────────────
+
+# Airflow dag_ids allow letters, digits, dash, dot and underscore only.
+_SLUG_RE = re.compile(r"[^A-Za-z0-9_]+")
+
+
+def _slug(name: str) -> str:
+    slug = _SLUG_RE.sub("_", name).strip("_").lower()
+    return f"kbx_{slug or 'job'}"
+
+
+class JobRequest(BaseModel):
+    name: str
+    schedule: str
+    statements: list[str]
+    source_notebook: str | None = None
+
+
+@app.get("/jobs")
+def list_jobs() -> dict[str, Any]:
+    try:
+        with _pg() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, name, dag_id, source_notebook, schedule,
+                       statements, enabled, created_at
+                FROM scheduled_jobs
+                ORDER BY created_at DESC
+                """
+            )
+            rows = cur.fetchall()
+        return {
+            "jobs": [
+                {
+                    "id": r[0],
+                    "name": r[1],
+                    "dagId": r[2],
+                    "sourceNotebook": r[3],
+                    "schedule": r[4],
+                    "statements": r[5],
+                    "enabled": r[6],
+                    "createdAt": r[7].isoformat(),
+                }
+                for r in rows
+            ]
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {"error": str(exc), "jobs": []}
+
+
+@app.post("/jobs")
+def create_job(req: JobRequest) -> Any:
+    name = (req.name or "").strip()
+    statements = [s.strip().rstrip(";") for s in req.statements if s and s.strip()]
+
+    if not name:
+        return JSONResponse(status_code=400, content={"error": "Name is required"})
+    if not statements:
+        return JSONResponse(
+            status_code=400, content={"error": "At least one statement is required"}
+        )
+    if not (req.schedule or "").strip():
+        return JSONResponse(status_code=400, content={"error": "Schedule is required"})
+
+    try:
+        with _pg() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO scheduled_jobs
+                    (name, dag_id, source_notebook, schedule, statements)
+                VALUES (%s, %s, %s, %s, %s)
+                RETURNING id, dag_id
+                """,
+                (
+                    name,
+                    _slug(name),
+                    req.source_notebook,
+                    req.schedule.strip(),
+                    json.dumps(statements),
+                ),
+            )
+            job_id, dag_id = cur.fetchone()
+        return {"id": job_id, "dagId": dag_id, "statements": len(statements)}
+    except psycopg2.errors.UniqueViolation:
+        return JSONResponse(
+            status_code=409,
+            content={"error": f"A job named {name!r} already exists."},
+        )
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse(status_code=502, content={"error": str(exc)})
+
+
+@app.delete("/jobs/{job_id}")
+def delete_job(job_id: int) -> Any:
+    try:
+        with _pg() as conn, conn.cursor() as cur:
+            cur.execute("DELETE FROM scheduled_jobs WHERE id = %s", (job_id,))
+            removed = cur.rowcount
+        if not removed:
+            return JSONResponse(status_code=404, content={"error": "No such job"})
+        return {"deleted": job_id}
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse(status_code=502, content={"error": str(exc)})
 
 
 # ── Execution ───────────────────────────────────────────────────────────────
