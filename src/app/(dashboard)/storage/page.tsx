@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import {
   LuFolder,
   LuFile,
@@ -9,6 +10,8 @@ import {
   LuDownload,
   LuEye,
   LuRefreshCw,
+  LuUpload,
+  LuTable,
   LuX,
 } from "react-icons/lu";
 import { cn } from "@/lib/utils";
@@ -58,6 +61,22 @@ function formatDate(iso: string | null): string {
 /** Extensions we can usefully show as text in the preview pane. */
 const PREVIEWABLE = /\.(csv|tsv|txt|json|jsonl|ndjson|md|log|ya?ml|xml|sql|py)$/i;
 
+/** Extensions Spark can register as a table without a schema definition. */
+const TABLE_FORMATS: Record<string, string> = {
+  csv: "CSV",
+  tsv: "CSV",
+  json: "JSON",
+  jsonl: "JSON",
+  ndjson: "JSON",
+  parquet: "PARQUET",
+  orc: "ORC",
+};
+
+function tableFormatFor(name: string): string | null {
+  const ext = name.split(".").pop()?.toLowerCase() ?? "";
+  return TABLE_FORMATS[ext] ?? null;
+}
+
 export default function StoragePage(): React.JSX.Element {
   const [buckets, setBuckets] = useState<BucketInfo[]>([]);
   const [bucket, setBucket] = useState<string | null>(null);
@@ -74,6 +93,7 @@ export default function StoragePage(): React.JSX.Element {
     truncated: boolean;
   } | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
 
   const fetchBuckets = useCallback(async (): Promise<void> => {
     setLoading(true);
@@ -137,6 +157,26 @@ export default function StoragePage(): React.JSX.Element {
     }
   }
 
+  async function handleUpload(file: File): Promise<void> {
+    if (!bucket) return;
+    setUploading(true);
+    setError(null);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      form.append("bucket", bucket);
+      form.append("prefix", prefix);
+      const res = await fetch("/api/storage", { method: "POST", body: form });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Upload failed");
+      await fetchObjects(bucket, prefix);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  }
+
   async function handleDownload(key: string): Promise<void> {
     if (!bucket) return;
     const params = new URLSearchParams({ bucket, key, action: "download" });
@@ -162,6 +202,23 @@ export default function StoragePage(): React.JSX.Element {
             Browse object storage backing the lakehouse.
           </p>
         </div>
+        <div className="flex items-center gap-2">
+        {bucket && (
+          <label className="flex cursor-pointer items-center gap-1.5 rounded-lg border-2 border-border/60 px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary hover:text-foreground">
+            <LuUpload className="h-3 w-3" />
+            {uploading ? "Uploading…" : "Upload"}
+            <input
+              type="file"
+              className="hidden"
+              disabled={uploading}
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) void handleUpload(f);
+                e.target.value = "";
+              }}
+            />
+          </label>
+        )}
         <button
           onClick={() =>
             bucket === null ? void fetchBuckets() : void fetchObjects(bucket, prefix)
@@ -171,6 +228,7 @@ export default function StoragePage(): React.JSX.Element {
           <LuRefreshCw className="h-3 w-3" />
           Refresh
         </button>
+        </div>
       </div>
 
       {/* Breadcrumb */}
@@ -319,6 +377,15 @@ export default function StoragePage(): React.JSX.Element {
                 {formatDate(o.lastModified)}
               </span>
               <span className="flex items-center justify-end gap-1">
+                {tableFormatFor(o.name) && (
+                  <Link
+                    href={`/catalog/new?location=${encodeURIComponent(`s3a://${bucket}/${o.key}`)}&format=${tableFormatFor(o.name)}`}
+                    title="Create a table from this file"
+                    className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  >
+                    <LuTable className="h-3.5 w-3.5" />
+                  </Link>
+                )}
                 {PREVIEWABLE.test(o.name) && (
                   <button
                     onClick={() => void handlePreview(o.key)}

@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
   LuPlus,
   LuTrash2,
@@ -45,13 +46,19 @@ function quote(value: string): string {
   return value.replace(/'/g, "''");
 }
 
-export default function CreateTablePage(): React.JSX.Element {
-  const [mode, setMode] = useState<Mode>("schema");
+function CreateTableForm(): React.JSX.Element {
+  const params = useSearchParams();
+  const seededLocation = params.get("location") ?? "";
+  const seededFormat = (params.get("format") ?? "").toUpperCase();
+
+  const [mode, setMode] = useState<Mode>(seededLocation ? "existing" : "schema");
   const [databases, setDatabases] = useState<string[]>([]);
   const [database, setDatabase] = useState("");
   const [table, setTable] = useState("");
-  const [format, setFormat] = useState("PARQUET");
-  const [location, setLocation] = useState("");
+  const [format, setFormat] = useState(
+    FORMATS.includes(seededFormat) ? seededFormat : "PARQUET"
+  );
+  const [location, setLocation] = useState(seededLocation);
   const [comment, setComment] = useState("");
   const [columns, setColumns] = useState<Column[]>([
     { name: "", type: "STRING", comment: "" },
@@ -64,28 +71,36 @@ export default function CreateTablePage(): React.JSX.Element {
     { ok: boolean; message: string } | null
   >(null);
 
-  const loadDatabases = useCallback(async (): Promise<void> => {
-    try {
-      const res = await fetch("/api/sql", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: "SHOW DATABASES", source: "catalog" }),
-      });
-      const data = await res.json();
-      if (!res.ok) return;
-      const names = (data.rows ?? []).map(
-        (r: Record<string, string>) => Object.values(r)[0]
-      );
-      setDatabases(names);
-      setDatabase((prev) => prev || names[0] || "");
-    } catch {
-      // Leave the dropdown empty; the DDL preview still works.
-    }
-  }, []);
-
   useEffect(() => {
+    let cancelled = false;
+
+    async function loadDatabases(): Promise<void> {
+      try {
+        const res = await fetch("/api/sql", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query: "SHOW DATABASES", source: "catalog" }),
+        });
+        const data = await res.json();
+        if (!res.ok || cancelled) return;
+
+        const rows = (data.rows ?? []) as Record<string, string>[];
+        const names = rows
+          .map((r) => Object.values(r)[0])
+          .filter((n): n is string => Boolean(n));
+
+        setDatabases(names);
+        setDatabase((prev) => prev || names[0] || "");
+      } catch {
+        // Leave the dropdown empty; the DDL preview still works.
+      }
+    }
+
     void loadDatabases();
-  }, [loadDatabases]);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   function updateColumn(i: number, patch: Partial<Column>): void {
     setColumns((prev) => prev.map((c, j) => (j === i ? { ...c, ...patch } : c)));
@@ -474,5 +489,13 @@ export default function CreateTablePage(): React.JSX.Element {
         </div>
       </div>
     </>
+  );
+}
+
+export default function CreateTablePage(): React.JSX.Element {
+  return (
+    <Suspense fallback={null}>
+      <CreateTableForm />
+    </Suspense>
   );
 }

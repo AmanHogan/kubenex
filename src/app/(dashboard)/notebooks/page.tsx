@@ -22,6 +22,7 @@ import {
   LuChevronDown,
   LuArrowLeft,
   LuSearch,
+  LuCalendarClock,
 } from "react-icons/lu";
 import { cn } from "@/lib/utils";
 
@@ -162,6 +163,13 @@ export default function WorkspacePage(): React.JSX.Element {
   const [openNotebook, setOpenNotebook] = useState<WorkspaceItem | null>(null);
   const [search, setSearch] = useState("");
   const [runningAll, setRunningAll] = useState(false);
+  const [scheduling, setScheduling] = useState(false);
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [scheduleName, setScheduleName] = useState("");
+  const [scheduleCron, setScheduleCron] = useState("0 3 * * *");
+  const [scheduleResult, setScheduleResult] = useState<
+    { ok: boolean; message: string } | null
+  >(null);
   const [homeExpanded, setHomeExpanded] = useState(true);
 
   useEffect(() => { setItems(loadItems()); }, []);
@@ -246,6 +254,52 @@ export default function WorkspacePage(): React.JSX.Element {
     setRunningAll(false);
   }
 
+  async function handleSchedule(): Promise<void> {
+    if (!openNotebook) return;
+    const statements = (openNotebook.cells ?? [])
+      .filter((c) => (c.language ?? "sql") === "sql" && c.source.trim())
+      .map((c) => c.source.trim());
+
+    if (statements.length === 0) {
+      setScheduleResult({
+        ok: false,
+        message: "This notebook has no SQL cells to schedule.",
+      });
+      return;
+    }
+
+    setScheduling(true);
+    setScheduleResult(null);
+    try {
+      const res = await fetch("/api/scheduled-jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: scheduleName.trim() || openNotebook.name,
+          schedule: scheduleCron.trim(),
+          statements,
+          sourceNotebook: openNotebook.name,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setScheduleResult({ ok: false, message: data.error ?? "Could not schedule" });
+        return;
+      }
+      setScheduleResult({
+        ok: true,
+        message: `Scheduled as ${data.dagId} — ${data.statements} statement${data.statements === 1 ? "" : "s"}. It appears in Jobs once Airflow rescans.`,
+      });
+    } catch (err) {
+      setScheduleResult({
+        ok: false,
+        message: err instanceof Error ? err.message : "Network error",
+      });
+    } finally {
+      setScheduling(false);
+    }
+  }
+
   function addCell(): void {
     if (!openNotebook) return;
     const c = newCell();
@@ -294,11 +348,71 @@ export default function WorkspacePage(): React.JSX.Element {
               {runningAll ? <LuLoader className="h-3.5 w-3.5 animate-spin" /> : <LuPlay className="h-3.5 w-3.5" />}
               Run All
             </button>
+            <button
+              onClick={() => {
+                setScheduleName(openNotebook.name);
+                setScheduleResult(null);
+                setScheduleOpen(true);
+              }}
+              className="flex h-9 items-center gap-1.5 rounded-lg border border-border px-3 text-sm font-medium text-muted-foreground hover:border-primary/40 hover:text-foreground"
+            >
+              <LuCalendarClock className="h-3.5 w-3.5" /> Schedule
+            </button>
             <a href={jupyterUrl} target="_blank" rel="noopener noreferrer" className="flex h-9 items-center gap-1.5 rounded-lg border border-border px-3 text-sm font-medium text-muted-foreground hover:border-primary/40 hover:text-foreground">
               <LuExternalLink className="h-3.5 w-3.5" /> JupyterHub
             </a>
           </div>
         </div>
+
+        {scheduleOpen && (
+          <div className="mb-4 rounded-xl border-2 border-border/60 bg-card p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <span className="text-sm font-medium">Schedule this notebook</span>
+              <button
+                onClick={() => setScheduleOpen(false)}
+                className="text-xs text-muted-foreground hover:text-foreground"
+              >
+                Close
+              </button>
+            </div>
+            <p className="mb-3 text-xs text-muted-foreground">
+              Its SQL cells run in order on this schedule. Python and Markdown cells are skipped.
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-medium text-muted-foreground">Job name</span>
+                <input
+                  value={scheduleName}
+                  onChange={(e) => setScheduleName(e.target.value)}
+                  className="w-full rounded-lg border-2 border-border/60 bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-medium text-muted-foreground">Cron schedule</span>
+                <input
+                  value={scheduleCron}
+                  onChange={(e) => setScheduleCron(e.target.value)}
+                  spellCheck={false}
+                  className="w-full rounded-lg border-2 border-border/60 bg-background px-3 py-2 font-mono text-sm focus:border-primary focus:outline-none"
+                />
+              </label>
+            </div>
+            <button
+              onClick={() => void handleSchedule()}
+              disabled={scheduling}
+              className="mt-3 flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            >
+              {scheduling ? <LuLoader className="h-3.5 w-3.5 animate-spin" /> : <LuCalendarClock className="h-3.5 w-3.5" />}
+              {scheduling ? "Scheduling…" : "Create job"}
+            </button>
+            {scheduleResult && (
+              <div className={cn("mt-3 flex items-start gap-2 rounded-lg border-2 px-3 py-2 text-xs", scheduleResult.ok ? "border-border/60 bg-muted/20 text-foreground" : "border-destructive/40 bg-destructive/10 text-destructive")}>
+                {scheduleResult.ok ? <LuCircleCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" /> : <LuCircleX className="mt-0.5 h-3.5 w-3.5 shrink-0" />}
+                <span>{scheduleResult.message}</span>
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="space-y-3">
           {(openNotebook.cells ?? []).map((rawCell, idx) => {
