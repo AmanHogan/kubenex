@@ -35,9 +35,9 @@ flowchart TB
     end
 
     subgraph VMS["k3s VMs — static IPs via netplan"]
-      SRV["k3s-server, control-plane<br/>192.168.4.220<br/>11.7 GiB"]
-      AG1["k3s-agent<br/>192.168.4.221<br/>7.8 GiB"]
-      AG2["k3s-agent-2<br/>192.168.4.222<br/>7.8 GiB"]
+      SRV["k3s-server, control-plane<br/>192.168.4.220"]
+      AG1["k3s-agent<br/>192.168.4.221"]
+      AG2["k3s-agent-2<br/>192.168.4.222"]
     end
   end
 
