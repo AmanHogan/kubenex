@@ -190,7 +190,16 @@ export default function CatalogPage(): React.JSX.Element {
   }, []);
 
   useEffect(() => {
-    void fetchCatalog();
+    let alive = true;
+    // Deferred to a microtask so the effect body itself does not call
+    // setState synchronously; the callback stays reusable by the Refresh
+    // button, which an inlined effect would not allow.
+    void Promise.resolve().then(() => {
+      if (alive) void fetchCatalog();
+    });
+    return () => {
+      alive = false;
+    };
   }, [fetchCatalog]);
 
   // Fetch table detail

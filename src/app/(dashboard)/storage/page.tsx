@@ -132,8 +132,17 @@ export default function StoragePage(): React.JSX.Element {
   );
 
   useEffect(() => {
-    if (bucket === null) void fetchBuckets();
-    else void fetchObjects(bucket, prefix);
+    let alive = true;
+    // Deferred to a microtask so the effect body itself does not call
+    // setState synchronously; both callbacks stay reusable by Refresh.
+    void Promise.resolve().then(() => {
+      if (!alive) return;
+      if (bucket === null) void fetchBuckets();
+      else void fetchObjects(bucket, prefix);
+    });
+    return () => {
+      alive = false;
+    };
   }, [bucket, prefix, fetchBuckets, fetchObjects]);
 
   async function handlePreview(key: string): Promise<void> {

@@ -16,7 +16,6 @@ import {
   LuUsers,
   LuFile,
   LuFileSpreadsheet,
-  LuFolderOpen,
   LuFolderClosed,
   LuChevronRight,
   LuChevronDown,
@@ -172,7 +171,17 @@ export default function WorkspacePage(): React.JSX.Element {
   >(null);
   const [homeExpanded, setHomeExpanded] = useState(true);
 
-  useEffect(() => { setItems(loadItems()); }, []);
+  useEffect(() => {
+    // Deferred so the effect body does not setState synchronously; this only
+    // hydrates the workspace from localStorage once on mount.
+    let alive = true;
+    void Promise.resolve().then(() => {
+      if (alive) setItems(loadItems());
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
   useEffect(() => { if (items.length > 0) saveItems(items); }, [items]);
 
   /* ─── File explorer actions ─── */

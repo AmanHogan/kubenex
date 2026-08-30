@@ -90,7 +90,16 @@ export default function QueryHistoryPage(): React.JSX.Element {
   }, []);
 
   useEffect(() => {
-    void fetchHistory();
+    let alive = true;
+    // Deferred to a microtask so the effect body itself does not call
+    // setState synchronously; the callback stays reusable by the Refresh
+    // button, which an inlined effect would not allow.
+    void Promise.resolve().then(() => {
+      if (alive) void fetchHistory();
+    });
+    return () => {
+      alive = false;
+    };
   }, [fetchHistory]);
 
   /** Hand the statement to the SQL editor via sessionStorage.

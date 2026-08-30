@@ -67,7 +67,16 @@ export default function RunsPage(): React.JSX.Element {
   }, []);
 
   useEffect(() => {
-    void fetchRuns();
+    let alive = true;
+    // Deferred to a microtask so the effect body itself does not call
+    // setState synchronously; the callback stays reusable by the Refresh
+    // button, which an inlined effect would not allow.
+    void Promise.resolve().then(() => {
+      if (alive) void fetchRuns();
+    });
+    return () => {
+      alive = false;
+    };
   }, [fetchRuns]);
 
   async function handleDelete(dagId: string, dagRunId: string): Promise<void> {

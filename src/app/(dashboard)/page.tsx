@@ -19,8 +19,6 @@ import {
 } from "react-icons/lu";
 import { cn } from "@/lib/utils";
 
-/* eslint-disable react/no-unescaped-entities */
-
 interface RecentRun {
   dag_id: string;
   dag_run_id: string;
@@ -111,7 +109,15 @@ export default function OverviewPage(): React.JSX.Element {
   }, []);
 
   useEffect(() => {
-    void fetchOverview();
+    let alive = true;
+    // Deferred to a microtask so the effect body itself does not call
+    // setState synchronously.
+    void Promise.resolve().then(() => {
+      if (alive) void fetchOverview();
+    });
+    return () => {
+      alive = false;
+    };
   }, [fetchOverview]);
 
   return (

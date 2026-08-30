@@ -81,7 +81,16 @@ export default function JobsPage(): React.JSX.Element {
   }, []);
 
   useEffect(() => {
-    void fetchDags();
+    let alive = true;
+    // Deferred to a microtask so the effect body itself does not call
+    // setState synchronously; the callback stays reusable by the Refresh
+    // button, which an inlined effect would not allow.
+    void Promise.resolve().then(() => {
+      if (alive) void fetchDags();
+    });
+    return () => {
+      alive = false;
+    };
   }, [fetchDags]);
 
   async function handleTrigger(dagId: string): Promise<void> {

@@ -15,10 +15,6 @@ import { NextResponse } from "next/server";
 const MINIO_ENDPOINT =
   process.env.MINIO_ENDPOINT ??
   "http://minio.data-platform.svc.cluster.local:9000";
-const MINIO_ACCESS_KEY = process.env.MINIO_ACCESS_KEY ?? "";
-const MINIO_SECRET_KEY = process.env.MINIO_SECRET_KEY ?? "";
-const THRIFT_PROXY_URL =
-  process.env.THRIFT_PROXY_URL ?? "http://spark-thrift.data-platform.svc.cluster.local:10000";
 
 export async function POST(req: Request): Promise<NextResponse> {
   try {

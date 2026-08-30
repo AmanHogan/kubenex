@@ -79,7 +79,16 @@ export default function ComputePage(): React.JSX.Element {
   }, []);
 
   useEffect(() => {
-    void fetchCompute();
+    let alive = true;
+    // Deferred to a microtask so the effect body itself does not call
+    // setState synchronously; the callback stays reusable by the Refresh
+    // button, which an inlined effect would not allow.
+    void Promise.resolve().then(() => {
+      if (alive) void fetchCompute();
+    });
+    return () => {
+      alive = false;
+    };
   }, [fetchCompute]);
 
   const corePct = cluster ? Math.round((cluster.usedCores / Math.max(cluster.totalCores, 1)) * 100) : 0;

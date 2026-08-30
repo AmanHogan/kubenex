@@ -23,6 +23,8 @@ export default function SqlEditorPage(): React.JSX.Element {
   // Query History hands a statement over via sessionStorage rather than a URL
   // param, which would break on long queries. Consume it once on mount.
   useEffect(() => {
+    // Deferred so the effect body does not setState synchronously.
+    void Promise.resolve().then(() => {
     try {
       const pending = sessionStorage.getItem("kubenex:pending-query");
       if (pending) {
@@ -32,6 +34,7 @@ export default function SqlEditorPage(): React.JSX.Element {
     } catch {
       // sessionStorage can be unavailable in private mode; ignore.
     }
+    });
   }, []);
 
   async function handleRun(): Promise<void> {
