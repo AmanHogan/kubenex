@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
  * Deliberate constraints:
  *   - One value axis. Two measures of different scale get two charts, never a
  *     second y-scale.
- *   - Series colours are assigned in fixed order and never cycled; past the
+ *   - Series colors are assigned in fixed order and never cycled; past the
  *     eighth series the extras are dropped rather than given generated hues.
  *   - Text uses text tokens, never the series colour; the mark beside a label
  *     carries identity.
