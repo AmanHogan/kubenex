@@ -43,3 +43,7 @@ next-env.d.ts
 # python bytecode from deploy/ helper scripts
 __pycache__/
 *.pyc
+
+# local-only credentials reference (never commit; local convenience file)
+HOMELAB-ACCESS.md
+
