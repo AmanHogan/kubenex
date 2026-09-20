@@ -24,7 +24,10 @@ export type ChartKind = "bar" | "line" | "area";
 
 /** Fixed slot order. A ninth series is never given a generated hue. */
 const MAX_SERIES = 8;
-const SERIES_VARS = Array.from({ length: MAX_SERIES }, (_, i) => `var(--viz-${i + 1})`);
+const SERIES_VARS = Array.from(
+  { length: MAX_SERIES },
+  (_, i) => `var(--viz-${i + 1})`,
+);
 
 const KINDS: { id: ChartKind; label: string; icon: typeof LuChartBar }[] = [
   { id: "bar", label: "Bar", icon: LuChartBar },
@@ -38,7 +41,10 @@ interface Props {
 }
 
 /** A column counts as numeric when every non-null value parses as a number. */
-function numericColumns(columns: string[], rows: Record<string, string | null>[]): string[] {
+function numericColumns(
+  columns: string[],
+  rows: Record<string, string | null>[],
+): string[] {
   return columns.filter((c) => {
     const values = rows.map((r) => r[c]).filter((v) => v !== null && v !== "");
     if (values.length === 0) return false;
@@ -51,7 +57,8 @@ function ticksFor(max: number): number[] {
   if (max <= 0) return [0];
   const rough = max / 4;
   const mag = Math.pow(10, Math.floor(Math.log10(rough)));
-  const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s >= rough) ?? mag * 10;
+  const step =
+    [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s >= rough) ?? mag * 10;
   const out: number[] = [];
   for (let v = 0; v <= max + step / 2; v += step) out.push(v);
   return out;
@@ -63,17 +70,24 @@ function formatValue(n: number): string {
   return Number.isInteger(n) ? String(n) : n.toFixed(2);
 }
 
-export default function ResultChart({ columns, rows }: Props): React.JSX.Element {
+export default function ResultChart({
+  columns,
+  rows,
+}: Props): React.JSX.Element {
   const numeric = useMemo(() => numericColumns(columns, rows), [columns, rows]);
   const categorical = useMemo(
     () => columns.filter((c) => !numeric.includes(c)),
-    [columns, numeric]
+    [columns, numeric],
   );
 
   const [kind, setKind] = useState<ChartKind>("bar");
   const [xCol, setXCol] = useState<string>(categorical[0] ?? columns[0] ?? "");
   const [yCols, setYCols] = useState<string[]>(numeric.slice(0, 1));
-  const [hover, setHover] = useState<{ i: number; x: number; y: number } | null>(null);
+  const [hover, setHover] = useState<{
+    i: number;
+    x: number;
+    y: number;
+  } | null>(null);
 
   if (numeric.length === 0) {
     return (
@@ -93,7 +107,7 @@ export default function ResultChart({ columns, rows }: Props): React.JSX.Element
 
   const maxValue = Math.max(
     0,
-    ...data.flatMap((r) => series.map((c) => Number(r[c] ?? 0) || 0))
+    ...data.flatMap((r) => series.map((c) => Number(r[c] ?? 0) || 0)),
   );
   const ticks = ticksFor(maxValue);
   const axisMax = ticks[ticks.length - 1] || 1;
@@ -102,7 +116,7 @@ export default function ResultChart({ columns, rows }: Props): React.JSX.Element
   // series would flatten another into the baseline, say so and let the reader
   // split them rather than silently rendering an unreadable chart.
   const seriesMax = series.map((c) =>
-    Math.max(0, ...data.map((r) => Number(r[c] ?? 0) || 0))
+    Math.max(0, ...data.map((r) => Number(r[c] ?? 0) || 0)),
   );
   const largest = Math.max(...seriesMax, 0);
   const smallest = Math.min(...seriesMax.filter((v) => v > 0), largest);
@@ -120,7 +134,9 @@ export default function ResultChart({ columns, rows }: Props): React.JSX.Element
   const plotH = H - padT - padB;
 
   const xFor = (i: number): number =>
-    data.length === 1 ? padL + plotW / 2 : padL + (i * plotW) / (data.length - 1);
+    data.length === 1
+      ? padL + plotW / 2
+      : padL + (i * plotW) / (data.length - 1);
   const yFor = (v: number): number => padT + plotH - (v / axisMax) * plotH;
 
   const bandW = plotW / Math.max(data.length, 1);
@@ -130,12 +146,14 @@ export default function ResultChart({ columns, rows }: Props): React.JSX.Element
   const MAX_BAR = 48;
   const barW = Math.min(
     MAX_BAR,
-    Math.max(3, (bandW / Math.max(series.length, 1)) * 0.7 - 2)
+    Math.max(3, (bandW / Math.max(series.length, 1)) * 0.7 - 2),
   );
 
   function toggleY(col: string): void {
     setYCols((prev) =>
-      prev.includes(col) ? prev.filter((c) => c !== col) : [...prev, col].slice(0, MAX_SERIES)
+      prev.includes(col)
+        ? prev.filter((c) => c !== col)
+        : [...prev, col].slice(0, MAX_SERIES),
     );
   }
 
@@ -153,7 +171,7 @@ export default function ResultChart({ columns, rows }: Props): React.JSX.Element
                 "flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors",
                 kind === id
                   ? "bg-primary text-primary-foreground"
-                  : "bg-muted text-muted-foreground hover:text-foreground"
+                  : "bg-muted text-muted-foreground hover:text-foreground",
               )}
             >
               <Icon className="h-3.5 w-3.5" />
@@ -170,7 +188,9 @@ export default function ResultChart({ columns, rows }: Props): React.JSX.Element
             className="rounded-lg border-2 border-border/60 bg-background px-2 py-1 text-xs text-foreground focus:border-primary focus:outline-none"
           >
             {columns.map((c) => (
-              <option key={c} value={c}>{c}</option>
+              <option key={c} value={c}>
+                {c}
+              </option>
             ))}
           </select>
         </label>
@@ -186,12 +206,17 @@ export default function ResultChart({ columns, rows }: Props): React.JSX.Element
                 onClick={() => toggleY(c)}
                 className={cn(
                   "flex items-center gap-1.5 rounded-full px-2.5 py-1 font-mono text-[11px] transition-colors",
-                  on ? "bg-muted text-foreground" : "bg-muted/40 text-muted-foreground hover:text-foreground"
+                  on
+                    ? "bg-muted text-foreground"
+                    : "bg-muted/40 text-muted-foreground hover:text-foreground",
                 )}
               >
                 <span
                   className="h-2 w-2 rounded-full"
-                  style={{ background: on ? SERIES_VARS[slot] : "currentColor", opacity: on ? 1 : 0.4 }}
+                  style={{
+                    background: on ? SERIES_VARS[slot] : "currentColor",
+                    opacity: on ? 1 : 0.4,
+                  }}
                 />
                 {c}
               </button>
@@ -224,12 +249,19 @@ export default function ResultChart({ columns, rows }: Props): React.JSX.Element
             {ticks.map((t) => (
               <g key={t}>
                 <line
-                  x1={padL} x2={W - padR} y1={yFor(t)} y2={yFor(t)}
-                  stroke="var(--viz-grid)" strokeWidth={1}
+                  x1={padL}
+                  x2={W - padR}
+                  y1={yFor(t)}
+                  y2={yFor(t)}
+                  stroke="var(--viz-grid)"
+                  strokeWidth={1}
                 />
                 <text
-                  x={padL - 8} y={yFor(t) + 3} textAnchor="end"
-                  className="fill-muted-foreground" style={{ fontSize: 10 }}
+                  x={padL - 8}
+                  y={yFor(t) + 3}
+                  textAnchor="end"
+                  className="fill-muted-foreground"
+                  style={{ fontSize: 10 }}
                 >
                   {formatValue(t)}
                 </text>
@@ -260,14 +292,23 @@ export default function ResultChart({ columns, rows }: Props): React.JSX.Element
                   {data.map((row, i) => {
                     const v = Number(row[col] ?? 0) || 0;
                     const h = Math.max(0, plotH - (yFor(v) - padT));
-                    const x = padL + bandW * i + (bandW - barW * series.length) / 2 + s * barW;
+                    const x =
+                      padL +
+                      bandW * i +
+                      (bandW - barW * series.length) / 2 +
+                      s * barW;
                     return (
                       <rect
                         key={i}
-                        x={x} y={yFor(v)} width={Math.max(barW - 2, 1)} height={h}
+                        x={x}
+                        y={yFor(v)}
+                        width={Math.max(barW - 2, 1)}
+                        height={h}
                         rx={4}
                         fill={SERIES_VARS[s]}
-                        onMouseEnter={() => setHover({ i, x: x + barW / 2, y: yFor(v) })}
+                        onMouseEnter={() =>
+                          setHover({ i, x: x + barW / 2, y: yFor(v) })
+                        }
                         onMouseLeave={() => setHover(null)}
                       />
                     );
@@ -277,7 +318,9 @@ export default function ResultChart({ columns, rows }: Props): React.JSX.Element
 
             {kind !== "bar" &&
               series.map((col, s) => {
-                const points = data.map((row, i) => `${xFor(i)},${yFor(Number(row[col] ?? 0) || 0)}`);
+                const points = data.map(
+                  (row, i) => `${xFor(i)},${yFor(Number(row[col] ?? 0) || 0)}`,
+                );
                 return (
                   <g key={col}>
                     {kind === "area" && (
@@ -298,12 +341,18 @@ export default function ResultChart({ columns, rows }: Props): React.JSX.Element
                     {data.map((row, i) => (
                       <circle
                         key={i}
-                        cx={xFor(i)} cy={yFor(Number(row[col] ?? 0) || 0)} r={4}
+                        cx={xFor(i)}
+                        cy={yFor(Number(row[col] ?? 0) || 0)}
+                        r={4}
                         fill={SERIES_VARS[s]}
                         stroke="var(--card)"
                         strokeWidth={2}
                         onMouseEnter={() =>
-                          setHover({ i, x: xFor(i), y: yFor(Number(row[col] ?? 0) || 0) })
+                          setHover({
+                            i,
+                            x: xFor(i),
+                            y: yFor(Number(row[col] ?? 0) || 0),
+                          })
                         }
                         onMouseLeave={() => setHover(null)}
                       />
@@ -327,7 +376,10 @@ export default function ResultChart({ columns, rows }: Props): React.JSX.Element
                 {String(data[hover.i][xCol] ?? "")}
               </div>
               {series.map((col, s) => (
-                <div key={col} className="flex items-center gap-1.5 text-muted-foreground">
+                <div
+                  key={col}
+                  className="flex items-center gap-1.5 text-muted-foreground"
+                >
                   <span
                     className="h-2 w-2 shrink-0 rounded-full"
                     style={{ background: SERIES_VARS[s] }}
@@ -345,7 +397,10 @@ export default function ResultChart({ columns, rows }: Props): React.JSX.Element
           {series.length > 1 && (
             <div className="mt-2 flex flex-wrap items-center gap-3 border-t border-border/40 pt-2">
               {series.map((col, s) => (
-                <span key={col} className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                <span
+                  key={col}
+                  className="flex items-center gap-1.5 text-[11px] text-muted-foreground"
+                >
                   <span
                     className="h-2 w-2 rounded-full"
                     style={{ background: SERIES_VARS[s] }}
@@ -358,8 +413,10 @@ export default function ResultChart({ columns, rows }: Props): React.JSX.Element
 
           {(rows.length > data.length || yCols.length > MAX_SERIES) && (
             <p className="mt-2 text-[11px] text-muted-foreground">
-              {rows.length > data.length && `Plotting the first ${data.length} of ${rows.length} rows.`}
-              {yCols.length > MAX_SERIES && ` Showing ${MAX_SERIES} of ${yCols.length} series.`}
+              {rows.length > data.length &&
+                `Plotting the first ${data.length} of ${rows.length} rows.`}
+              {yCols.length > MAX_SERIES &&
+                ` Showing ${MAX_SERIES} of ${yCols.length} series.`}
             </p>
           )}
         </div>

@@ -26,7 +26,7 @@ type ExecResult = {
  */
 async function getXsrfCookies(): Promise<{ cookieHeader: string; xsrfToken: string }> {
   const res = await fetch(`${JUPYTER_URL}/tree`, {
-    signal: AbortSignal.timeout(5000),
+    signal: AbortSignal.timeout(15000),
   });
 
   const setCookie =
@@ -64,7 +64,7 @@ function authHeaders(extra?: Record<string, string>): Record<string, string> {
 async function getOrCreateKernel(cookieHeader: string, xsrfToken: string): Promise<string> {
   const listRes = await fetch(`${JUPYTER_URL}/api/kernels`, {
     headers: authHeaders({ Cookie: cookieHeader }),
-    signal: AbortSignal.timeout(5000),
+    signal: AbortSignal.timeout(15000),
   });
 
   if (!listRes.ok) {
