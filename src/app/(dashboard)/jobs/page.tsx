@@ -60,11 +60,27 @@ function timeAgo(dateStr: string | null): string {
   return `${days}d ago`;
 }
 
+/** A statement ends at a semicolon that closes a line, so a `;` inside a string literal is left alone. */
+function splitStatements(sql: string): string[] {
+  return sql
+    .split(/;[ \t]*(?:\r?\n|$)/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
 export default function JobsPage(): React.JSX.Element {
   const [dags, setDags] = useState<Dag[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [triggering, setTriggering] = useState<string | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createName, setCreateName] = useState("");
+  const [createCron, setCreateCron] = useState("0 3 * * *");
+  const [createSql, setCreateSql] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [createResult, setCreateResult] = useState<
+    { ok: boolean; message: string } | null
+  >(null);
 
   const fetchDags = useCallback(async (): Promise<void> => {
     try {
@@ -113,6 +129,54 @@ export default function JobsPage(): React.JSX.Element {
     }
   }
 
+  async function handleCreate(): Promise<void> {
+    const name = createName.trim();
+    const schedule = createCron.trim();
+    const statements = splitStatements(createSql);
+
+    if (!name) {
+      setCreateResult({ ok: false, message: "Enter a job name." });
+      return;
+    }
+    if (!schedule) {
+      setCreateResult({ ok: false, message: "Enter a cron schedule." });
+      return;
+    }
+    if (statements.length === 0) {
+      setCreateResult({ ok: false, message: "Enter at least one SQL statement." });
+      return;
+    }
+
+    setCreating(true);
+    setCreateResult(null);
+    try {
+      const res = await fetch("/api/scheduled-jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, schedule, statements }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setCreateResult({ ok: false, message: data.error ?? "Could not create job" });
+        return;
+      }
+      setCreateResult({
+        ok: true,
+        message: `Created ${data.dagId} with ${data.statements} statement${data.statements === 1 ? "" : "s"}. It appears in the list once Airflow rescans its DAGs.`,
+      });
+      setCreateName("");
+      setCreateSql("");
+      await fetchDags();
+    } catch (err) {
+      setCreateResult({
+        ok: false,
+        message: err instanceof Error ? err.message : "Network error",
+      });
+    } finally {
+      setCreating(false);
+    }
+  }
+
   async function handleToggle(dagId: string, isPaused: boolean): Promise<void> {
     try {
       const res = await fetch("/api/jobs", {
@@ -150,12 +214,80 @@ export default function JobsPage(): React.JSX.Element {
             <LuRefreshCw className="h-3.5 w-3.5" />
             Refresh
           </button>
-          <button className="flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90">
+          <button
+            onClick={() => {
+              setCreateOpen((open) => !open);
+              setCreateResult(null);
+            }}
+            className="flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+          >
             <LuPlus className="h-3.5 w-3.5" />
             Create Job
           </button>
         </div>
       </div>
+
+      {createOpen && (
+        <div className="mb-4 rounded-xl border-2 border-border/60 bg-card p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <span className="text-sm font-medium">New scheduled job</span>
+            <button
+              onClick={() => setCreateOpen(false)}
+              className="text-xs text-muted-foreground hover:text-foreground"
+            >
+              Close
+            </button>
+          </div>
+          <p className="mb-3 text-xs text-muted-foreground">
+            The SQL statements run in order on the schedule. End each statement with a semicolon at the end of a line.
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-medium text-muted-foreground">Job name</span>
+              <input
+                value={createName}
+                onChange={(e) => setCreateName(e.target.value)}
+                placeholder="Analyze bronze sales"
+                className="w-full rounded-lg border-2 border-border/60 bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none"
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-medium text-muted-foreground">Cron schedule</span>
+              <input
+                value={createCron}
+                onChange={(e) => setCreateCron(e.target.value)}
+                spellCheck={false}
+                className="w-full rounded-lg border-2 border-border/60 bg-background px-3 py-2 font-mono text-sm focus:border-primary focus:outline-none"
+              />
+            </label>
+          </div>
+          <label className="mt-3 block">
+            <span className="mb-1.5 block text-xs font-medium text-muted-foreground">SQL</span>
+            <textarea
+              value={createSql}
+              onChange={(e) => setCreateSql(e.target.value)}
+              rows={6}
+              spellCheck={false}
+              placeholder={"ANALYZE TABLE bronze.sales COMPUTE STATISTICS;"}
+              className="w-full rounded-lg border-2 border-border/60 bg-background px-3 py-2 font-mono text-sm focus:border-primary focus:outline-none"
+            />
+          </label>
+          <button
+            onClick={() => void handleCreate()}
+            disabled={creating}
+            className="mt-3 flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+          >
+            {creating ? <LuLoader className="h-3.5 w-3.5 animate-spin" /> : <LuCalendarClock className="h-3.5 w-3.5" />}
+            {creating ? "Creating…" : "Create job"}
+          </button>
+          {createResult && (
+            <div className={cn("mt-3 flex items-start gap-2 rounded-lg border-2 px-3 py-2 text-xs", createResult.ok ? "border-border/60 bg-muted/20 text-foreground" : "border-destructive/40 bg-destructive/10 text-destructive")}>
+              {createResult.ok ? <LuCircleCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" /> : <LuCircleX className="mt-0.5 h-3.5 w-3.5 shrink-0" />}
+              <span>{createResult.message}</span>
+            </div>
+          )}
+        </div>
+      )}
 
       {error && (
         <div className="mb-4 rounded-xl border-2 border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
