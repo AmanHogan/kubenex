@@ -32,7 +32,7 @@ cluster.
 | Repository | Contents |
 |---|---|
 | `kubenex` (this repository) | The Next.js app and the SQL Gateway source (`deploy/sql-gateway`) |
-| `k3s-data-platform` | Kubernetes manifests for the platform services and for Kubenex, and the ArgoCD applications. The Airflow DAG `kubenex_scheduled_jobs` is only in the cluster (ConfigMap `airflow-dags`), not in git. |
+| `k3s-data-platform` | Kubernetes manifests for the platform services and for Kubenex, and the ArgoCD applications. The Airflow DAGs, including `kubenex_scheduled_jobs`, are in `platform/airflow/airflow.yaml`. |
 
 ## Deploy path
 
